@@ -24,6 +24,9 @@ class Predictor():
         # 中间结果缓存, 存放各个步骤计算出的Zi, Ai, 方便bp的时候使用
         self.cache = {}
 
+        # 其它选项
+        self.fix_w = False  # 初始参数的w是否随机
+
     def init_params(self, fix_w=False):
         # 根据 layer_dims对参数进行初始化
         # fix_w: True: 用固定的w, 翻遍调试 False: 用随机数
@@ -34,16 +37,21 @@ class Predictor():
         n_y = self.layer_dims[-1]
         n_layers = []
         params = {}
-        n_layers[0] = n_x
-        n_layers[len(self.layer_dims)] = n_y
+        #n_layers[0] = n_x
+        #n_layers[len(self.layer_dims)] = n_y
         # W1 = np.random.random((n_1, n_x))
         # b1 = np.zeros((n_1, 1))
         # W2 = np.random.random((n_y, n_1))
         # b2 = np.zeros((n_y, 1))
-        for i in self.layer_dims[1:]:
-            n_layers[i] = self.layer_dims[i]
-            params['W'+str(i)] =  np.random.random((n_layers[i], n_layers[i-1]))
-            params['b'+str(i)] =  np.random.random((n_layers[i], 1))
+
+        for i in range(1, len(self.layer_dims)):
+            #n_layers[i] = self.layer_dims[i]
+            if fix_w:
+                params['W' + str(i)] = np.ones((self.layer_dims[i], self.layer_dims[i - 1])) * 10
+                params['b' + str(i)] = np.zeros((self.layer_dims[i], 1))
+            else:
+                params['W'+str(i)] =  np.random.random((self.layer_dims[i], self.layer_dims[i-1]))
+                params['b'+str(i)] =  np.random.random((self.layer_dims[i], 1))
 
         return params
 
@@ -82,14 +90,62 @@ class Predictor():
         # return params: 参数字典 params['W1']
 
         for i in self.layer_dims[1:]:
-            self.params['W'+str(i)] -=  self.learning_rate * grads['W'+str(i)]
+            self.params['W'+str(i)] -=  self.learning_rate * grads['dW'+str(i)]
+            self.params['b'+str(i)] -=  self.learning_rate * grads['db'+str(i)]
 
         return self.params
 
-    def fit(self, X, y):
+    def fit(self, X, y, debug=False):
+        self.params = self.init_params(fix_w=self.fix_w)
+        if debug:
+            print("初始params: {}".format(self.params))
 
-        # 训练过程， 这部分应该能在基类统一实现
-        pass  # todo
+        costlist = []
+        paramslist = []
+        last_L = 1e5
+
+        for j in range(self.max_train_step):
+
+            yhat = self.forword(X)
+            # print ("yhat.shape:{}, y.shape: {}".format(yhat.shape, y.shape))
+            L = self.compute_cost(yhat, y)
+
+            if abs(last_L - L) < self.convergence:
+                if debug:
+                    print("已收敛")
+                    print("step:{} cost:{} ".format(j, L))
+                    print("params: {}".format(self.params))
+                    print()
+                break
+            last_L = L
+
+
+            costlist.append(L)
+            paramslist.append(self.params)
+
+            if debug:
+                if j % 1000 == 0 or j==0 or j==1:
+                    print("step:{} cost:{} ".format(j, L))
+                    # print("dW1: {} dW2: {} db: {}".format(dL_dW[0,0], dL_dW[0,1], dL_db))
+                    # print("params: {}".format(params))
+                    print()
+                if j == 1:
+                    print("grads: {}".format(grads))
+                    print("params: {}".format(self.params))
+            grads = self.bp_grads(X, yhat, y)
+
+            self.params = self.update_params(grads)
+
+            # print (W.shape)
+            info = (costlist, paramslist)
+        else:
+            if debug:
+                print("已达到最大迭代次数")
+                print("cost:{} ".format(L))
+                print("params: {}".format(self.params))
+                print()
+
+        return (self.params, info)
 
     def predict_prob(self, X):
         return self.forword(X)
